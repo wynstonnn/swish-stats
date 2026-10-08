@@ -1,0 +1,9 @@
+{
+  "name": "swish-stat-centre",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SWISH team stats website that reads the Player Tracker Excel file.",
+  "dependencies": {
+    "xlsx": "0.18.5"
+  }
+}
