@@ -1,3 +1,5 @@
+> **Current deployed app:** [SWISH Clubhouse](https://swish-clubhouse.vercel.app/hub/index.html). Vercel uses the `clubhouse` project folder. See [the current README](clubhouse/README.md) and [setup guide](clubhouse/SETUP.md) for open access, read-only Google stats and published Film Room clips. The instructions below describe the older Stat Centre.
+
 # SWISH Stat Centre
 
 A website for the SWISH youth team. It reads the **SWISH Player Tracker** Excel file from a share link, so when you update the Excel file, the website updates by itself (within about a minute). There's no code to touch and nothing to re-upload.
