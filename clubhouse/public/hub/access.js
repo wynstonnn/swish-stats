@@ -1,2 +1,2 @@
 'use strict';
-window.Access={canView(next){return SwishAuth.user?.role!=='player'||['home','progress','team','games','predictions','grind','film','accolades'].includes(next)},apply(){const u=SwishAuth.user;document.body.dataset.role=u.role;$('workspace-mode').hidden=true;$('session-mode').hidden=true;document.querySelectorAll('[data-view],[data-go]').forEach(b=>b.hidden=!Access.canView(b.dataset.view||b.dataset.go));},render(){}};
+window.Access={canView(){return true},apply(){document.body.dataset.role='community';document.querySelectorAll('[data-view],[data-go]').forEach(b=>b.hidden=false);},render(){}};

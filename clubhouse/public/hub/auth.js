@@ -1,7 +1,3 @@
 'use strict';
-window.SwishAuth={user:null,ready:null};
-SwishAuth.ready=(async()=>{const r=await fetch('/api/auth/me',{cache:'no-store'});if(!r.ok)throw Error('Could not open the clubhouse. Refresh to retry.');const user=await r.json();SwishAuth.user=user;document.body.dataset.role=user.role;document.getElementById('account-label').textContent=user.role==='player'?'PLAYER VIEW':'COACH / VOLUNTEER';document.getElementById('sign-out').hidden=user.role==='player';document.getElementById('staff-unlock').hidden=user.role!=='player';return user;})();
-document.getElementById('staff-unlock').addEventListener('click',()=>document.getElementById('pin-dialog').showModal());
-document.getElementById('pin-cancel').addEventListener('click',()=>document.getElementById('pin-dialog').close());
-document.getElementById('pin-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,b=f.querySelector('[type=submit]');b.disabled=true;try{const r=await fetch('/api/auth/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:f.elements.pin.value})}),v=await r.json();if(!r.ok)throw Error(v.error);location.reload();}catch(err){document.getElementById('pin-status').textContent=err.message;f.elements.pin.value='';}finally{b.disabled=false}});
-document.getElementById('sign-out').addEventListener('click',async()=>{const r=await fetch('/api/auth/sign-out',{method:'POST'});if(r.ok){sessionStorage.clear();location.reload();}});
+window.SwishAuth={user:{id:'clubhouse',email:'SWISH Clubhouse',role:'community',player:null,admin:false},ready:null};
+SwishAuth.ready=(async()=>{try{const r=await fetch('/api/auth/me',{cache:'no-store'});if(r.ok)SwishAuth.user=await r.json();}catch{}document.body.dataset.role='community';document.getElementById('account-label').textContent='ONE CLUBHOUSE · EVERYONE WELCOME';return SwishAuth.user;})();
