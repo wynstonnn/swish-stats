@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS dataset (id text PRIMARY KEY,raw text NOT NULL,name t
 CREATE TABLE IF NOT EXISTS game_submissions (id uuid PRIMARY KEY,payload_hash text NOT NULL,status text NOT NULL CHECK(status IN ('pending','complete')),author text NOT NULL,created text NOT NULL,updated text NOT NULL);
 CREATE TABLE IF NOT EXISTS pin_attempts (id text PRIMARY KEY,attempts integer NOT NULL,reset_at bigint NOT NULL);
 CREATE TABLE IF NOT EXISTS check_ins (id text PRIMARY KEY,title text NOT NULL,date text NOT NULL,kind text NOT NULL CHECK(kind IN ('Volunteering session','Match')),names text NOT NULL,revision integer NOT NULL DEFAULT 1,created text NOT NULL);
-CREATE TABLE IF NOT EXISTS films (id text PRIMARY KEY,title text NOT NULL,url text NOT NULL,provider text NOT NULL CHECK(provider IN ('youtube','instagram')),category text NOT NULL CHECK(category IN ('Skills library','Our game footage')),cue text NOT NULL DEFAULT '',created text NOT NULL);
+CREATE TABLE IF NOT EXISTS films (id text PRIMARY KEY,title text NOT NULL,url text NOT NULL,provider text NOT NULL CHECK(provider IN ('youtube','instagram','drive')),category text NOT NULL CHECK(category IN ('Skills Library','5 On 5 Plays','3 On 3 Plays','Game Footage','Skills library','Our game footage')),cue text NOT NULL DEFAULT '',created text NOT NULL);
 CREATE TABLE IF NOT EXISTS awards (id text PRIMARY KEY,player text NOT NULL,title text NOT NULL,season text NOT NULL,event_key text NOT NULL,reason text NOT NULL DEFAULT '',awarded text NOT NULL,UNIQUE(player,title,season,event_key));
 CREATE TABLE IF NOT EXISTS predictions (id text PRIMARY KEY,device_id text NOT NULL,player text NOT NULL,date text NOT NULL,opponent text NOT NULL,metrics text NOT NULL,created text NOT NULL,UNIQUE(device_id,player,date,opponent));
 CREATE TABLE IF NOT EXISTS lineup_stints (id text PRIMARY KEY,game_id text NOT NULL,players text NOT NULL,period integer NOT NULL CHECK(period BETWEEN 1 AND 10),start_clock integer NOT NULL,end_clock integer NOT NULL CHECK(end_clock>=0 AND end_clock<start_clock),start_for integer NOT NULL,start_against integer NOT NULL,end_for integer NOT NULL CHECK(end_for>=start_for),end_against integer NOT NULL CHECK(end_against>=start_against),poss_for integer,poss_against integer,note text NOT NULL DEFAULT '',created text NOT NULL);
@@ -33,3 +33,9 @@ CREATE TABLE IF NOT EXISTS public.award_votes (
 CREATE INDEX IF NOT EXISTS award_votes_season_player_idx ON public.award_votes(season,player,title);
 ALTER TABLE public.award_votes ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.award_votes FROM anon, authenticated;
+
+CREATE TABLE IF NOT EXISTS suggestions (id text PRIMARY KEY,device_id text NOT NULL,player text NOT NULL,category text NOT NULL CHECK(category IN ('Drill','Skill','Play','Film')),body text NOT NULL CHECK(length(body) BETWEEN 1 AND 500),created text NOT NULL);
+CREATE INDEX IF NOT EXISTS suggestions_created_idx ON suggestions(created DESC);
+CREATE INDEX IF NOT EXISTS suggestions_device_created_idx ON suggestions(device_id,created);
+ALTER TABLE suggestions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON suggestions FROM anon,authenticated;

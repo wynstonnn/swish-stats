@@ -52,11 +52,15 @@ The heatmap reads Shot_Data **E Player, F Zone, G Result** (Make/Made or Miss/Mi
 
 Player comparisons use qualified teammates with at least five records, exclude the selected player, share tie credit and require three eligible peers. Turnovers favour fewer. Top X% rounds conservatively to a whole percentage; insufficient samples stay unscored. The implemented shooting badges (Set and Fire, Smooth Operator, Static Middy) use verified NBA 2K27 glossary icons in Bronze, Silver, Gold and Hall Of Fame colours. The full 53-badge game catalogue is not implemented. SWISH unlocks use stat proxies and team percentiles, not the game’s attribute requirements. Publisher image source: https://cdn.prgloo.com/media/21380e3231894ed3bc29a6f113c5f2f2.jpg.
 
-## Film Room Without A Database
+## Shared Film Room And Youth Suggestions
 
-Staff → Film Room → Clip Editor can prepare YouTube, Instagram and Google Drive file links. Select Skills Library, 5 On 5 Plays, 3 On 3 Plays or Game Footage and add a viewing cue. Preview, then Export Catalogue. Replace `public/hub/content/film-room.json` in GitHub and commit to main; Vercel publishes it for everyone. Device drafts do not automatically publish. Reset Device Drafts returns to the published catalogue.
+Staff → Film Room → Build The Film Room → Publish A Clip saves YouTube, Instagram or Google Drive video file links directly to Supabase. Choose a shelf, title and viewing cue. The server checks staff access, provider URLs and input limits; a submission ID makes retries safe. Everyone can read published clips. No GitHub push, JSON editing or Vercel redeployment is required to add or remove shared clips.
 
-Drive links must point to a video **file**, shared as Anyone With The Link → Viewer. Provider embedding restrictions may require the original-link fallback. Viewing published clips needs no Supabase or Google key.
+The bundled `public/hub/content/film-room.json` remains a fallback catalogue. Catalogue Backup downloads the combined watchlist; old device drafts can be published with Publish Restored Device Drafts. Shared clips require the database; a failed save retains form input and never claims success.
+
+For existing installations apply `supabase/film-suggestions.sql`. Fresh installations use `supabase/schema.sql`. RLS is enabled and direct anon/authenticated table grants are revoked; access runs through the Vercel APIs. Challenges accepts Drill, Skill, Play and Film suggestions from a roster player, using a signed browser identity, idempotent retries and five suggestions per rolling 24 hours. Suggestions are a current shared planning board, independent of historical stats filters.
+
+Google Drive needs a video file link with viewer access. Folder links cannot play. Provider/owner embedding permissions still apply. Saved links remain in your Supabase project independently of ChatGPT subscriptions.
 
 ### Complete Game Logging
 
