@@ -30,13 +30,19 @@ Supabase is the record store. Google Sheets is a separate direct integration fro
    - `GOOGLE_SERVICE_ACCOUNT_EMAIL`: JSON `client_email`
    - `GOOGLE_PRIVATE_KEY`: JSON `private_key`, including BEGIN/END lines. Real line breaks and literal `\n` are supported.
 7. Save and redeploy. Staff Access → Data & Sheet → **Test Google Connection** verifies the credential and that the sheet can be read. This does not write a test game or prove Editor permission. The first real successful save proves writes.
-8. Staff → **Log Game**: select the participants, enter scores and optional shooting detail, reconcile player points with the SWISH total, then save. Games and Player_Data update together. Existing records/formulas are retained. The dashboard refreshes afterward.
+8. Staff → **Log Game**: choose a division (Men’s Open, U21, U18, Women’s Open, Girls U21/U18 or a custom division), add optional comma-separated tags, add only the participants from the empty player picker, enter scores and optional shooting detail, reconcile player points with the SWISH total, then save. Games and Player_Data update together. Existing records/formulas are retained. The dashboard refreshes afterward.
 
-The same submission ID is retained when retrying a draft. A Google metadata receipt prevents duplicates after an uncertain response. A second game with the same date/opponent is blocked because the existing tracker identifies games that way. Keep original sheet names and columns. Edit double-headers carefully in the source sheet if required.
+The same submission ID is retained when retrying a draft. A Google metadata receipt prevents duplicates after an uncertain response. A second game with the same date/opponent/division is blocked. Different divisions can play the same opponent on the same date: new Games and Player_Data rows share a SWISH Game ID so stats stay separate. Legacy games without divisions retain their date/opponent matching and block ambiguous duplicates. Keep original sheet names and columns. Metadata fields (SWISH Division, SWISH Tags, SWISH Game ID) are appended automatically on the first new save without replacing existing columns or formulas. Existing games remain Division Not Recorded until you explicitly update the source. New games always start with no players added; returning to an unsaved draft retains your selected participants.
 
 A 403 from Google usually means the service account needs Editor access or the API is disabled. An authorisation error requires checking the email/key pair and redeploying. Never put the private key, database URL, session secret or PIN in public JavaScript or GitHub. Use Vercel settings to maintain them outside ChatGPT.
 
 Official guidance: [Create Service-Account Credentials And Share Specific Files](https://developers.google.com/workspace/guides/create-credentials), [Sheets API Scopes](https://developers.google.com/workspace/sheets/api/scopes).
+
+## Adding Players And Divisions
+
+Staff → **Team Breakdown → Team Roster → Add Player** writes the name, optional position/hand, Active status and optional multiple comma-separated divisions to Player_Roster. For example, a player can belong to U18 and U21. Custom names such as Girls U16 are supported. The SWISH Divisions field is appended automatically. Duplicate names (ignoring case) are rejected; use a surname or other distinguishing name when two players share a name. The roster save has a Google metadata receipt so retrying the same draft does not insert duplicates. Adding a player does not add a game appearance or zero-stat row. Players without game logs are visible in Team Roster and individual selectors.
+
+Game History filters by division and tag. Team Breakdown filters by roster membership; statistical averages and Top X% comparisons remain season totals across recorded divisions. Roster membership is a label, not a verified age or eligibility rule. The participant dropdown groups other divisions separately; staff can select someone who plays across divisions. All roster and game mutations remain staff-only.
 
 ## Live Stats And Shot Heatmap
 
