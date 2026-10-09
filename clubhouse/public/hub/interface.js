@@ -13,6 +13,6 @@ function format(){
 let scheduled=false;
 function schedule(){if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;format();});}
 root.Interface={format,titleCase};
-function start(){format();new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true,characterData:true});document.addEventListener('change',schedule);}
+function start(){const header=document.getElementById('site-header'),toggle=document.getElementById('nav-toggle'),nav=document.getElementById('dashboard-nav');const menu=open=>{header.dataset.menuOpen=String(open);toggle.setAttribute('aria-expanded',String(open));};toggle.addEventListener('click',()=>menu(header.dataset.menuOpen!=='true'));nav.addEventListener('click',e=>{if(e.target.closest('[data-view]'))menu(false);});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&header.dataset.menuOpen==='true'){menu(false);toggle.focus();}});format();new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true,characterData:true});document.addEventListener('change',schedule);}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })(globalThis);
