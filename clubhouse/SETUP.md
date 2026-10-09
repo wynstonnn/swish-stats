@@ -22,14 +22,16 @@ The repository, Vercel project, linked spreadsheet ID, staff PIN and generated s
 3. In the project, open **SQL Editor → New query**.
 4. Open [clubhouse/supabase/schema.sql](https://github.com/wynstonnn/swish-stats/blob/main/clubhouse/supabase/schema.sql), copy all its SQL, paste it into the editor and run it. The script is safe to rerun and leaves existing legacy tables intact.
 5. Use the project's **Connect** panel and select **Transaction pooler**. Copy the Postgres URI, normally on port **6543**. Serverless Vercel functions need a pooler rather than many direct database connections.
-6. Replace the password placeholder with your database password. URL-encode special password characters; do not include the surrounding placeholder brackets. Add `?sslmode=require` if the URI has no query string, or `&sslmode=require` if it already has one. Use the host/user shown in your own Connect panel rather than guessing them.
+6. Replace the password placeholder with your database password. URL-encode special password characters; do not include the surrounding placeholder brackets. Add `?sslmode=verify-full` if the URI has no query string, or `&sslmode=verify-full` if it already has one. Use the host/user shown in your own Connect panel rather than guessing them.
 7. In Vercel, put that full URI in `DATABASE_URL` for the **swish-clubhouse** project, Production environment.
 
 Example shape only — do not copy these placeholders as real credentials:
 
 ```text
-postgresql://postgres.PROJECT_REFERENCE:ENCODED_DATABASE_PASSWORD@YOUR_POOLER_HOST:6543/postgres?sslmode=require
+postgresql://postgres.PROJECT_REFERENCE:ENCODED_DATABASE_PASSWORD@YOUR_POOLER_HOST:6543/postgres?sslmode=verify-full
 ```
+
+For Supabase pooler/direct hosts, the backend supplies the official Supabase root CA and verifies the server certificate and hostname. It normalizes URI SSL parameters internally so they cannot replace the CA configuration. Existing `sslmode=require` URIs also work with full verification. An optional server-only `DATABASE_SSL_CA` value can supply a new official PEM root certificate if Supabase rotates it; actual line breaks or literal `\n` are accepted.
 
 The backend uses parameterized `pg` queries without named prepared statements, and transaction-scoped advisory locks, compatible with the transaction pooler. Tables have Row Level Security enabled and no anon/authenticated grants; browsers never connect directly to Postgres. The trusted server connection performs the validated operations.
 
@@ -112,6 +114,7 @@ The app does need hosting for as long as you want the URL available, but you do 
 | Symptom | Check |
 |---|---|
 | Player page works; Save says connect database | Add DATABASE_URL, run schema.sql, redeploy |
+| Certificate-chain error after adding DATABASE_URL | Deploy the current backend, which includes Supabase's official CA; retain certificate verification |
 | PIN fails after adding DATABASE_URL | Verify DB password, SSL URI and pin_attempts table; run the full schema before enabling DB |
 | Too many PIN attempts | Wait 15 minutes; database-backed throttling counts attempts per source IP |
 | Google authorisation fails | Correct service-account email/private key, correct new deployment, active key |
