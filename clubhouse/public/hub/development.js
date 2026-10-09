@@ -3,14 +3,81 @@
 const metrics=['pts','reb','ast','stl','blk','to'];
 const average=values=>{const known=values.filter(v=>typeof v==='number'&&Number.isFinite(v));return known.length?known.reduce((a,b)=>a+b,0)/known.length:null;};
 function shooting(rows,made,attempted){const known=rows.filter(r=>r[made]!==null&&r[made]!==undefined&&r[attempted]!==null&&r[attempted]!==undefined),makes=known.reduce((s,r)=>s+r[made],0),attempts=known.reduce((s,r)=>s+r[attempted],0);return {makes,attempts,records:known.length,rate:attempts>0?makes/attempts:null};}
-function ratings(p){const fg=shooting(p.rows,'fgm','fga'),three=shooting(p.rows,'threeMade','threeAtt');const items=[['SCORING',p.avg.pts,20,p.counts.pts],['PLAYMAKING',p.avg.ast,5,p.counts.ast],['REBOUNDING',p.avg.reb,8,p.counts.reb],['DEF. ACTIVITY',p.avg.stl!==null&&p.avg.blk!==null?p.avg.stl+p.avg.blk:null,3,Math.min(p.counts.stl,p.counts.blk)],['FINISHING',fg.attempts>=20?fg.rate:null,.55,fg.records],['PERIMETER',three.attempts>=20?three.rate:null,.4,three.records]].map(([label,value,benchmark,n])=>({label,value,benchmark,records:n,rating:value===null?null:Math.round(40+59*Math.min(1,Math.max(0,value/benchmark)))}));const known=items.filter(x=>x.rating!==null);return {items,overall:known.length>=4?Math.round(average(known.map(x=>x.rating))):null,provisional:p.gp<5||known.length<6||items.some(x=>x.rating!==null&&x.records<5)};}
+// SWISH rating system v2: same six attributes and blend as the reference.
+// Missing components stay missing; ties share the same rating and OVR.
+const attributes=[
+ {key:'ins',label:'Inside Scoring',adj:'Slashing',noun:'Finisher',weights:[.6,.4]},
+ {key:'out',label:'Outside Scoring',adj:'Sharpshooting',noun:'Shooter',weights:[.6,.4]},
+ {key:'ply',label:'Playmaking',adj:'Playmaking',noun:'Playmaker',weights:[.7,.3]},
+ {key:'reb',label:'Rebounding',adj:'Glass-Cleaning',noun:'Rebounder',weights:[.7,.3]},
+ {key:'def',label:'Defense',adj:'Lockdown',noun:'Defender',weights:[.5,.3,.2]},
+ {key:'eff',label:'Efficiency',adj:'Efficient',noun:'Scorer',weights:[1]}
+];
+const finite=Number.isFinite;
+function percentile(value,values){if(!finite(value)||!values.length)return null;const lower=values.filter(v=>v<value-1e-9).length,ties=values.filter(v=>Math.abs(v-value)<1e-9).length;return values.length>1?(lower+(ties-1)/2)/(values.length-1):.5;}
+function aggregatePlayers(players,rows){return players.map(p=>{const rs=rows.filter(r=>r.name===p.name),counts={},avg={},totals={};for(const key of Object.keys(root.Swish?.cols||p.avg||{})){const xs=rs.map(r=>r[key]).filter(finite);counts[key]=xs.length;totals[key]=xs.reduce((a,b)=>a+b,0);avg[key]=average(xs);}return {...p,rows:rs,gp:rs.length,counts,avg,totals};});}
+function ratingSet(players){
+ const active=players.filter(p=>p.rows?.length),allRows=active.flatMap(p=>p.rows),teamMean=k=>average(allRows.map(r=>r[k])),teamShot=(m,a)=>shooting(allRows,m,a).rate;
+ const twoRows=rows=>rows.map(r=>finite(r.twoMade)&&finite(r.twoAtt)?r:finite(r.fgm)&&finite(r.fga)&&finite(r.threeMade)&&finite(r.threeAtt)?{...r,twoMade:r.fgm-r.threeMade,twoAtt:r.fga-r.threeAtt}:r).filter(r=>finite(r.twoMade)&&finite(r.twoAtt)&&r.twoMade>=0&&r.twoAtt>=r.twoMade);
+ const twoPrior=shooting(twoRows(allRows),'twoMade','twoAtt').rate,threePrior=teamShot('threeMade','threeAtt');
+ const ts=rows=>{const rs=rows.filter(r=>['pts','fga','fta'].every(k=>finite(r[k]))),den=2*rs.reduce((n,r)=>n+r.fga+.44*r.fta,0);return {rate:den>0?rs.reduce((n,r)=>n+r.pts,0)/den:null,den,pts:rs.reduce((n,r)=>n+r.pts,0),records:rs.length};},tsPrior=ts(allRows).rate;
+ const rate=(rows,k)=>{const xs=rows.map(r=>r[k]).filter(finite),prior=teamMean(k);return xs.length?(xs.reduce((a,b)=>a+b,0)+(prior??0)*3)/(xs.length+3):null;};
+ const smoothedShot=(rows,m,a,prior)=>{const x=shooting(rows,m,a);return x.attempts>0?(x.makes+(prior??x.rate)*8)/(x.attempts+8):null;};
+ const raw=new Map(active.map(p=>{const r=p.rows,t=twoRows(r),at=r.filter(x=>finite(x.ast)&&finite(x.to)),sum=k=>at.reduce((n,x)=>n+x[k],0),eff=ts(r);return [p.name,{ins:[rate(t,'twoMade'),smoothedShot(t,'twoMade','twoAtt',twoPrior)],out:[rate(r,'threeMade'),smoothedShot(r,'threeMade','threeAtt',threePrior)],ply:[rate(r,'ast'),at.length?(sum('ast')+2)/(sum('to')+2):null],reb:[rate(r,'reb'),rate(r,'oreb')],def:[rate(r,'stl'),rate(r,'blk'),rate(r,'contest')],eff:[eff.rate===null?null:(eff.pts+(tsPrior??eff.rate)*12)/(eff.den+12)]}];}));
+ const result=new Map(active.map(p=>[p.name,{items:[],overall:null,blend:null,percentile:null,provisional:p.rows.length<3,archetype:'Developing Build',tier:'Bronze'}]));
+ for(const a of attributes){
+  // Compare the same available components for every qualified member of a cohort.
+  const components=a.weights.map((_,i)=>active.filter(p=>finite(raw.get(p.name)[a.key][i])).map(p=>raw.get(p.name)[a.key][i]));
+  const means=components.map(average),sds=components.map((xs,i)=>Math.sqrt(average(xs.map(x=>(x-means[i])**2))||0)||1);
+  const z=new Map(active.map(p=>{const vals=raw.get(p.name)[a.key],known=vals.map((v,i)=>finite(v)&&components[i].length>=2?i:-1).filter(i=>i>=0);return [p.name,known.length?known.reduce((n,i)=>n+a.weights[i]*(vals[i]-means[i])/sds[i],0)/known.reduce((n,i)=>n+a.weights[i],0):vals.some(finite)?0:null];}));
+  const zs=[...z.values()].filter(finite);
+  for(const p of active){const pr=percentile(z.get(p.name),zs),records=p.rows.filter(r=>a.key==='ins'?finite(r.twoMade)||finite(r.fgm):a.key==='out'?finite(r.threeMade):a.key==='eff'?['pts','fga','fta'].every(k=>finite(r[k])):a.key==='ply'?finite(r.ast):a.key==='reb'?finite(r.reb):finite(r.stl)||finite(r.blk)||finite(r.contest)).length;result.get(p.name).items.push({key:a.key,label:a.label,rating:pr===null?null:Math.round(55+44*pr),percentile:pr===null?null:100*pr,records,peers:zs.length-1});}
+ }
+ for(const p of active){const r=result.get(p.name),known=r.items.filter(x=>finite(x.rating)).sort((a,b)=>b.rating-a.rating),vals=known.map(x=>x.rating);r.blend=vals.length>=4?.4*average(vals.slice(0,3))+.6*average(vals):null;r.provisional=r.provisional||known.length<6||r.items.some(x=>x.records<3||x.peers<3);if(known.length>=2){const first=attributes.find(a=>a.key===known[0].key),second=attributes.find(a=>a.key===known[1].key);r.archetype=first.adj+' '+second.noun;}}
+ const blends=[...result.values()].map(r=>r.blend).filter(finite);
+ for(const r of result.values()){const pr=percentile(r.blend,blends);r.percentile=pr===null?null:100*pr;r.overall=pr===null?null:Math.round(60+35*pr);r.tier=r.overall>=90?'Hall Of Fame':r.overall>=80?'Gold':r.overall>=70?'Silver':'Bronze';}
+ return result;
+}
+let ratingCachePlayers=null,ratingCache=null;
+function ratings(p,team=[p]){if(team!==ratingCachePlayers){ratingCachePlayers=team;ratingCache=ratingSet(team);}return ratingCache.get(p.name)||{items:attributes.map(a=>({...a,rating:null,records:0})),overall:null,blend:null,percentile:null,provisional:true,archetype:'Build Your First Game',tier:'Bronze'};}
+function ratingHistory(data,name){
+ const full=data.career||data,rows=(data.eligible?.rows||data.rows).filter(r=>r.date),dates=[...new Set(rows.map(r=>r.date))].sort();
+ const point=(rs,label,extra={})=>{const ps=aggregatePlayers(full.players,rs),p=ps.find(p=>p.name===name),r=ratingSet(ps).get(name);return {label,overall:r?.overall??null,archetype:r?.archetype||'Not Enough Stats',provisional:r?.provisional??true,gp:p?.gp||0,...extra};};
+ // Retrospective snapshots never include future games or undated records.
+ const games=dates.filter(d=>rows.some(r=>r.name===name&&r.date===d)).map(d=>point(rows.filter(r=>r.date<=d),d,{date:d}));
+ const period=new Map();for(const r of rows){const year=r.date.slice(0,4),division=r.division||'Division Not Recorded',key=year+' · '+division;if(!period.has(key))period.set(key,{year,division,rows:[]});period.get(key).rows.push(r);}
+ const seasons=[...period.entries()].map(([label,g])=>point(g.rows,label,{year:g.year,division:g.division})).filter(p=>p.gp).sort((a,b)=>a.year.localeCompare(b.year)||a.division.localeCompare(b.division));
+ const windows=offset=>{const rs=full.players.flatMap(p=>{const own=rows.filter(r=>r.name===p.name),keys=[...new Set(own.slice().sort(root.SwishScope?.latest||((a,b)=>b.date.localeCompare(a.date)||b.index-a.index)).map(r=>r.key))].slice(offset,offset+5);return own.filter(r=>keys.includes(r.key));});return point(rs,offset?'Previous Five':'Last Five');};
+ const years=[...new Set(rows.map(r=>r.date.slice(0,4)))].sort().map(year=>point(rows.filter(r=>r.date.startsWith(year)),year,{year})).filter(p=>p.gp);
+ const recent=windows(0),previous=windows(5),ownKeys=new Set(rows.filter(r=>r.name===name).map(r=>r.key));
+ return {games,seasons,years,recent,previous:ownKeys.size>=10?previous:null,undated:(data.eligible?.rows||data.rows).filter(r=>r.name===name&&!r.date).length};
+}
+function usage(data,name){
+ const p=data.players.find(p=>p.name===name),full=data.career||data,records=[];if(!p)return {records,share:null,usg:null,ppg:null};
+ const groups=new Map();for(const row of p.rows){if(!groups.has(row.key))groups.set(row.key,[]);groups.get(row.key).push(row);}
+ for(const [key,own] of groups){const games=full.games.filter(g=>g.key===key),g=games.length===1?games[0]:null,rs=full.rows.filter(r=>r.key===key);if(!g||own.length!==1||new Set(rs.map(r=>r.name)).size!==rs.length||!rs.length||!rs.every(r=>['fga','fta','to','pts'].every(k=>finite(r[k])&&r[k]>=0)))continue;
+  if(finite(g.score)&&rs.reduce((n,r)=>n+r.pts,0)!==g.score)continue;
+  const plays=r=>r.fga+.44*r.fta+r.to,team=rs.reduce((n,r)=>n+plays(r),0),r=own[0];if(team<=0||!['fga','fta','to','pts'].every(k=>finite(r[k])))continue;
+  const format=String(g.type).replace(/[^0-9v]/gi,'').toLowerCase(),onCourt=format==='5v5'?5:format==='3v3'?3:null,teamMin=rs.reduce((n,r)=>n+(r.minutes||0),0),minutesKnown=onCourt&&rs.length>=onCourt&&rs.every(r=>finite(r.minutes)&&r.minutes>=0)&&r.minutes>0&&teamMin/onCourt>=r.minutes;
+  records.push({date:r.date,key,opponent:g.name,own:plays(r),team,pts:r.pts,share:100*plays(r)/team,expected:minutesKnown?team*r.minutes/(teamMin/onCourt):null});
+ }
+ const sum=k=>records.reduce((n,r)=>n+r[k],0),timed=records.filter(r=>finite(r.expected)&&r.expected>0),timedSum=k=>timed.reduce((n,r)=>n+r[k],0);
+ return {records,share:sum('team')>0?100*sum('own')/sum('team'):null,usg:timed.length?100*timedSum('own')/timedSum('expected'):null,timed:timed.length,ppg:records.length?sum('pts')/records.length:null,playsPerGame:records.length?sum('team')/records.length:null,efficiency:sum('own')>0?sum('pts')/sum('own'):null};
+}
+function usageScenario(u,share){return finite(u.efficiency)&&finite(u.playsPerGame)&&share>=0&&share<=100?u.efficiency*u.playsPerGame*share/100:null;}
 const badgeThresholds={Bronze:50,Silver:75,Gold:90,HallOfFame:95};
 const badgeRules=[
+ {name:'Bucket Getter',metric:'Points Per Game',key:'pts',records:3,art:'PTS'},
+ {name:'Glass Cleaner',metric:'Rebounds Per Game',key:'reb',records:3,art:'REB'},
+ {name:'Dimer',metric:'Assists Per Game',key:'ast',records:3,art:'AST'},
+ {name:'Pickpocket',metric:'Steals Per Game',key:'stl',records:3,art:'STL'},
+ {name:'Rim Protector',metric:'Blocks Per Game',key:'blk',records:3,art:'BLK'},
+ {name:'Second Chance',metric:'Offensive Rebounds Per Game',key:'oreb',records:3,art:'OR'},
  {name:'Set and Fire',metric:'3PT Percentage · SWISH Proxy',made:'threeMade',attempted:'threeAtt',attempts:20,art:'set-fire'},
  {name:'Smooth Operator',metric:'2PT Percentage · SWISH Proxy',made:'twoMade',attempted:'twoAtt',attempts:30,art:'smooth'},
  {name:'Static Middy',metric:'Logged Mid-Range Percentage · SWISH Proxy',zone:true,attempts:10,art:'middy'}
 ];
-function badgeProgress(p,team=[]){return badgeRules.map(rule=>{
+function badgeProgress(p,team=[]){const performance=badgeRules.map(rule=>{
  const measure=who=>{if(rule.key)return {value:who.avg[rule.key],sample:who.counts[rule.key]||0,eligible:(who.counts[rule.key]||0)>=rule.records&&Number.isFinite(who.avg[rule.key])};const mid=(who.shots||[]).filter(r=>/mid-range|mid range/i.test(r.zone));const s=rule.zone?{attempts:mid.length,rate:mid.length?mid.filter(r=>r.made).length/mid.length:null}:shooting(who.rows,rule.made,rule.attempted);return {value:s.rate,sample:s.attempts,eligible:s.attempts>=rule.attempts&&s.rate!==null};};
  const own=measure(p),peers=team.filter(peer=>peer.name!==p.name).map(measure).filter(peer=>peer.eligible&&Number.isFinite(peer.value));
  const qualified=own.eligible&&peers.length>=3;
@@ -19,7 +86,7 @@ function badgeProgress(p,team=[]){return badgeRules.map(rule=>{
  const requirement=rule.key?`${rule.records} Recorded Games`:`${rule.attempts} Shot Attempts`;
  const reason=!own.eligible?`Needs ${requirement}`:peers.length<3?'Needs 3 Qualified Teammates':own.value<=0?'Needs A Positive Recorded Result':tier?`${tier} Earned`:'Below The Bronze Threshold';
  return {name:rule.name,art:rule.art,metric:rule.metric,value:own.value,sample:own.sample,shooting:!rule.key,peers:peers.length,percentile,tier,reason,requirement};
-});}
+});const starters=['First Rep','Team Contributor'].map((name,i)=>({name,art:i?'TEAM':'REP',metric:'Participation Badge · Not A Performance Rank',value:p.gp||0,sample:p.gp||0,shooting:false,peers:0,percentile:null,tier:p.gp>0?'Bronze':null,reason:p.gp>0?'Bronze · First Recorded Appearance':'Log Your First Game',requirement:'One Recorded Appearance',starter:true}));return [...performance,...starters];}
 function badges(p,team=[]){return badgeProgress(p,team).filter(b=>b.tier);}
 function insights(data,p=null){const rows=p?p.rows:data.rows,fg=shooting(rows,'fgm','fga'),ft=shooting(rows,'ftm','fta'),three=shooting(rows,'threeMade','threeAtt'),groups=p?rows.filter(r=>r.date).sort((a,b)=>a.date.localeCompare(b.date)||a.index-b.index):data.games.filter(g=>g.date&&g.rows.length).sort((a,b)=>a.date.localeCompare(b.date)||a.index-b.index).map(g=>({date:g.date,...Object.fromEntries(metrics.map(m=>[m,g.rows.every(r=>r[m]!==null)?g.rows.reduce((s,r)=>s+r[m],0):null]))}));
 const avg=Object.fromEntries(metrics.map(m=>[m,average(groups.map(r=>r[m]))])),tips=[];
@@ -36,5 +103,5 @@ function actual(prediction,data){const matches=(data.players.find(p=>p.name===pr
 function lineups(stints){const groups=new Map();for(const s of stints){const players=s.players.slice().sort(),key=JSON.stringify(players);if(!groups.has(key))groups.set(key,{players,seconds:0,for:0,against:0,stints:0,games:new Set(),possFor:0,possAgainst:0,allPoss:true});const g=groups.get(key);g.seconds+=s.start_clock-s.end_clock;g.for+=s.end_for-s.start_for;g.against+=s.end_against-s.start_against;g.stints++;g.games.add(s.game_id);if(s.poss_for===null||s.poss_against===null||s.poss_for===undefined||s.poss_against===undefined)g.allPoss=false;else{g.possFor+=s.poss_for;g.possAgainst+=s.poss_against;}}
 return [...groups.values()].map(g=>({...g,games:g.games.size,minutes:g.seconds/60,plusMinus:g.for-g.against,per40:g.seconds?(g.for-g.against)*2400/g.seconds:null,off100:g.allPoss&&g.possFor?100*g.for/g.possFor:null,def100:g.allPoss&&g.possAgainst?100*g.against/g.possAgainst:null})).sort((a,b)=>b.seconds-a.seconds);}
 function comparison(p,team,key){const own=p.avg[key],sample=p.counts[key]||0,peers=team.filter(t=>t.name!==p.name&&(t.counts[key]||0)>=5&&Number.isFinite(t.avg[key]));if(sample<5||!Number.isFinite(own)||peers.length<3)return {percentile:null,top:null,sample,peers:peers.length};const percentile=100*peers.reduce((n,t)=>n+(t.avg[key]===own ? 0.5 :(['to','foul'].includes(key)?t.avg[key]>own:t.avg[key]<own)?1:0),0)/peers.length;return {percentile,top:Math.max(1,Math.ceil(100-percentile)),sample,peers:peers.length};}
-root.Development={comparison,average,shooting,ratings,badges,badgeProgress,badgeThresholds,insights,actual,lineups};
+root.Development={attributes,percentile,ratingSet,ratingHistory,aggregatePlayers,usage,usageScenario,comparison,average,shooting,ratings,badges,badgeProgress,badgeThresholds,insights,actual,lineups};
 })(globalThis);
