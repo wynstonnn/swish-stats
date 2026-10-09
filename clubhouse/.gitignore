@@ -8,3 +8,5 @@ next-env.d.ts
 *.pem
 *service-account*.json
 exports/
+
+node_modules

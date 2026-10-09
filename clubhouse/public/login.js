@@ -1,4 +1,0 @@
-'use strict';
-const form=document.getElementById('login-form'),status=document.getElementById('login-status');
-async function submit(mode){if(!form.reportValidity())return;const buttons=[...form.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);status.textContent='Connecting…';try{const r=await fetch('/api/auth/'+mode,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(form)))}),result=await r.json();if(!r.ok)throw Error(result.error||'Sign-in failed.');if(result.confirmEmail){status.textContent='Check your email to confirm your account, then return here to sign in.';return}location.replace('/hub/index.html');}catch(e){status.textContent=e.message;}finally{buttons.forEach(b=>b.disabled=false);}}
-form.addEventListener('submit',e=>{e.preventDefault();submit('sign-in')});document.getElementById('signup').addEventListener('click',()=>submit('sign-up'));

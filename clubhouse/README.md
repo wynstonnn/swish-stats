@@ -1,34 +1,36 @@
 # SWISH Clubhouse
 
-SWISH's basketball growth dashboard for youths, coaches and volunteers, with a 2K-inspired player lab, levels, quests, sessions, attendance, drill library, lineups and coaching notes.
+A 2K-inspired basketball development hub for youths, coaches and volunteers. Players explore the shared proxy roster; coaches and volunteers unlock identical tools with a server-verified PIN.
 
-This is the portable Next.js version. Vercel hosts the app, Supabase provides sign-in, Postgres and private workbook storage, and Google Sheets remains the source of basketball statistics.
+**Live app:** https://swish-clubhouse.vercel.app
 
-## Main workflows
+**Complete backend setup:** [SETUP.md](SETUP.md)
 
-- **Players:** sign in to the player lab, team roster, game room and their own quests/attendance XP. They cannot call staff endpoints, change roles, add games, upload workbooks, or read coaching notes.
-- **Coaches and volunteers:** access every staff tool, including sessions, attendance, duties, quests, coaching notes, lineups, workbook backups and Add game.
-- **Club administrator:** assigns roles and links each account to a roster player from Account access. New confirmed accounts start as players. Administrator identity is the verified email in `SWISH_ADMIN_EMAILS`, configured on the server.
-- **Add game:** choose the date/opponent/format, enter final scores, tick the players who played, enter box scores, then save. One atomic Google batch inserts the match and player records under the existing headers. Existing records are retained, computed shooting cells receive formulas, and unknown optional shooting data stays blank.
-- Stats refresh on opening, every 60 seconds while visible, and on Refresh now. Save game invalidates the shared cache and refreshes stats.
+## Features
 
-## Set up the backend
+- MyPlayer cards: transparent stat-based development ratings, provisional samples, Bronze/Silver/Gold badges and award totals.
+- Call your shot: next-game predictions compared with the matching Google Sheet box score. Forecasts are tied to a signed browser cookie, not individual accounts.
+- Unseen Hours (The Grind): individual/team shooting and turnover gaps, recent three vs previous three comparisons, practical game cues, six animated drills/plays with pause and step controls.
+- Film Room: YouTube and Instagram embedded viewers; Skills library and Our game footage shelves; staff add a link and viewing cue. Public/embedding restrictions can prevent a clip playing; an original-link fallback remains available. Direct uploads are not implemented.
+- Accolades: staff awards, repeat counts (such as 2× Hustle Player of the Year), seasons, reasons and unique game/event references.
+- Simple attendance: session or match, date, names typed on separate lines or comma-separated; names deduplicate and staff can edit saved lists.
+- Shared staff notebook: observations, next steps, game cues and session plans.
+- Lineup tracker: five names, countdown entry/exit clocks and cumulative scores per substitution stint. Save & next carries the clock/score forward. Summaries show recorded minutes, plus/minus, scaled plus/minus per 40 and optional possession-based efficiency. Overlapping stints are rejected; individual game averages are never treated as lineup performance.
+- Add game: validates final scores and box scores, then atomically adds Games and Player_Data rows to Google Sheets. Optional shooting remains unknown when blank. Safe retries prevent duplicate writes.
+- Live statistics: refresh on opening, every 60 seconds while visible, on returning to the tab, and on Refresh now. Last successful snapshots are retained in Postgres when connected.
 
-1. Create a Supabase project in Singapore (`ap-southeast-1`). Run `supabase/schema.sql` in its SQL editor. It creates the clubhouse tables and a private `swish-workbooks` bucket. Existing data is not deleted.
-2. In Supabase Auth, enable email/password sign-in and email confirmation. Set the Site URL to your Vercel production origin, and add the exact production origin as an allowed redirect. Configure SMTP if required for reliable confirmation emails.
-3. Create a Google Cloud service account, enable the Google Sheets API in its project, create a JSON key, and share the linked tracker with its `client_email` as **Editor**. No domain-wide delegation is needed. Keep the credential in Vercel environment settings; never upload the JSON to GitHub.
-4. Set the eight variables in `.env.example` in Vercel. Use Supabase's transaction pooler connection for `DATABASE_URL`; encode special password characters in the URL and use SSL. The service-role key is only used by the server for the private workbook bucket. All variables are server-only.
-5. Put your confirmed email into `SWISH_ADMIN_EMAILS`. Sign up, confirm your email, then sign in. Ask players, coaches and volunteers to create their accounts, then use Account access to assign staff roles or link player profiles. An account appears after its first confirmed sign-in.
+## Architecture and independence
 
-The app can read a private Google Sheet through the service account. If the original Sheet is still shared publicly, its separate Google sharing rules still apply; app roles do not control direct access to Google Sheets.
+GitHub owns the code, Vercel runs Next.js/API functions, Supabase Postgres stores clubhouse records and Google Sheets stores match statistics. No ChatGPT session, subscription, API, Supabase Auth, SMTP, browser OAuth token or Supabase Storage key is used by the deployed app. It continues independently after ChatGPT Plus ends while those external services and credentials remain active.
 
-## GitHub and Vercel
+The public player side has read access to the shared proxy statistics and curated club content. Staff reads/writes require the signed HttpOnly PIN cookie. The PIN is only checked on the server. A player cannot gain write access by unhiding a tab or forging role headers. Successful sessions last eight hours; changing STAFF_PIN or STAFF_SESSION_SECRET invalidates them. PIN attempt throttling is database-backed when connected; before database setup, the fallback is per server instance. A shared PIN gives all holders the same access, rather than individual identity/audit attribution.
 
-This folder is designed to live at `clubhouse/` in `wynstonnn/swish-stats`, alongside the earlier dashboard.
+## Development and deploy
 
-Import the repository into Vercel as **swish-clubhouse**, choose **Next.js**, set **Root Directory: clubhouse**, and use the default `npm install` / `npm run build` settings with Node 22 or 24. Add backend variables before live use. Once linked, pushes to the production branch deploy automatically. Preview deployments keep the team's default protection.
+Vercel project **swish-clubhouse** links this repository with Root Directory **clubhouse**, framework Next.js, production branch main. Main pushes trigger deployments. The older root dashboard and ChatGPT-hosted site are separate deployments.
 
 ```sh
+cd clubhouse
 npm ci
 cp .env.example .env.local
 npm run dev
@@ -37,20 +39,20 @@ npm test
 npm run build
 ```
 
-No credential, workbook, cached player data or personal staff records are committed in this folder. The old root app and its settings are preserved during this migration. The existing ChatGPT-hosted site is a separate deployment; it does not gain these permission changes until separately upgraded or retired.
+Use six server environment variables from `.env.example`. Configuration diagnostics appear under staff **Setup & sheet**. No player accounts, admin emails, anon keys, service-role keys, confirmation emails or redirect URL configuration are needed.
 
-## Retry and data rules
+## Data rules
 
-A UUID belongs to one submitted game draft. A Postgres advisory lock serializes SWISH writes to this spreadsheet; an atomic Google developer-metadata marker identifies successfully written submissions. Retrying an uncertain save with the same draft does not duplicate the game. Editing a previously submitted draft requires starting a new game, and the duplicate check still applies.
+Player averages use recorded values, not blanks as zero. Ratings are SWISH training indicators, not official NBA 2K ratings. Full formulas and badge thresholds are visible on every player card. Shooting uses paired makes/attempts for development cards. Team gap analysis includes only dated games with the relevant metric fully recorded. Box scores cannot establish defensive coverage, shooting openness or lineup chemistry; use the drill cues and Film Room alongside them.
 
-The date/opponent combination must be unique because the original tracker joins game records by those fields. Two games against the same opponent on the same date need a future tracker format change; this version blocks them. Keep the four existing tab names and headers. New match rows are inserted at row 2, with selected player rows inserted at row 2 of Player_Data. Existing formula references shift with Google Sheets row insertion; review any external exports that assume fixed row positions.
+A prediction matches one player/date/opponent box score. Opponent matching ignores case and surrounding spaces. Forecasts for past dates or games with logged player box scores are rejected. SWISH serializes forecast/game writes against the same spreadsheet lock, but direct edits in Google Sheets are outside that lock. Clearing the browser cookie loses access to that browser's predictions; staff still see them in the database. This setup does not claim verified individual player identities.
 
-Player points must equal the SWISH score. Makes must not exceed attempts. When all three shot categories are recorded, they must reconcile to points. Missing shooting detail stays unknown, not zero. Per-shot location logging remains in the original Sheet; this form adds aggregate player box scores.
+Each game submission has a UUID and payload hash. A Postgres transaction lock serializes writes to the Sheet; a Google developer-metadata marker proves whether an uncertain atomic save succeeded. Retry the same unchanged draft after a timeout. Games sharing the same date/opponent are blocked because the original tracker joins on those fields. Preserve original tab names and column layout. Writes insert at row 2 under the headers; review external integrations that assume fixed row positions.
 
-## Migrating existing staff records
+Lineup writes serialize overlap checks and inserts in a Postgres transaction; retries with the same stint ID return success only for the same payload. Delete an incorrect stint before replacing it. Period breaks need separate stints. Per-100 values require both possession counts on every included stint; per-40 values are scaled observations, not predictions.
 
-This repository does not include live records from the earlier hosted site. Export sessions, attendance, duties, quests and observations privately and import them into the matching Supabase tables before retiring that site. Workbook backups must be moved into the private storage bucket separately. Live Google statistics need no data migration.
+SQL setup is additive. It does not erase legacy records, but quests, old attendance categories and account-role endpoints are removed from the new app. Earlier hosted staff records are not automatically migrated. Export anything you need before retiring the previous deployment.
 
-## Checks
+## Verification
 
-`npm test` covers verified identities, forged role/header rejection, player/staff API separation, private-field filtering, box-score validation, worksheet mapping, literal text safety and idempotent retry after an uncertain write. A production build verifies the Vercel-compatible runtime. Real Google writes require the service account and are not replaced by public viewer access.
+Tests cover PIN tampering/expiry, public/staff API boundaries, forged headers, origin checks, input validation, video URL allowlists, attendance edit conflicts, frontend navigation, predictions vs actual results, repeat awards, lineup calculations and atomic game retry/idempotence. Production build checks the Vercel runtime. Real database persistence and Google write permissions must be verified after the owner adds external credentials; configuration indicators alone are not proof of a successful write.
