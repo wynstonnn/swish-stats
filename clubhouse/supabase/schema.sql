@@ -1,0 +1,20 @@
+-- Run once in your Supabase SQL editor. Server uses the Postgres connection;
+-- browser roles receive no table access, including roles and private notes.
+CREATE TABLE IF NOT EXISTS sessions (id text PRIMARY KEY,title text NOT NULL,date text NOT NULL,time text NOT NULL,venue text NOT NULL,lead text NOT NULL,focus text NOT NULL,duration integer NOT NULL,plan text NOT NULL,status text NOT NULL DEFAULT 'planned',revision integer NOT NULL DEFAULT 1,author text NOT NULL,updated text NOT NULL);
+CREATE TABLE IF NOT EXISTS attendance (session_id text REFERENCES sessions(id),player text NOT NULL,state text NOT NULL,author text NOT NULL,updated text NOT NULL,PRIMARY KEY(session_id,player));
+CREATE TABLE IF NOT EXISTS duties (id text PRIMARY KEY,session_id text NOT NULL REFERENCES sessions(id),task text NOT NULL,volunteer text NOT NULL,done integer NOT NULL DEFAULT 0,author text NOT NULL);
+CREATE TABLE IF NOT EXISTS quests (id text PRIMARY KEY,player text NOT NULL,title text NOT NULL,target text NOT NULL,due text NOT NULL,status text NOT NULL DEFAULT 'active',evidence text NOT NULL DEFAULT '',author text NOT NULL,updated text NOT NULL);
+CREATE TABLE IF NOT EXISTS observations (id text PRIMARY KEY,player text NOT NULL,category text NOT NULL,body text NOT NULL,author text NOT NULL,created text NOT NULL);
+CREATE TABLE IF NOT EXISTS dataset (id text PRIMARY KEY,raw text NOT NULL,name text NOT NULL,blob_key text NOT NULL,revision integer NOT NULL DEFAULT 1,author text NOT NULL,updated text NOT NULL);
+CREATE TABLE IF NOT EXISTS user_roles (id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,email text NOT NULL,role text NOT NULL DEFAULT 'player' CHECK(role IN ('player','coach','volunteer')),player text);
+CREATE TABLE IF NOT EXISTS game_submissions (id uuid PRIMARY KEY,payload_hash text NOT NULL,status text NOT NULL CHECK(status IN ('pending','complete')),author text NOT NULL,created text NOT NULL,updated text NOT NULL);
+ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE observations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dataset ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE game_submissions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON sessions,attendance,duties,quests,observations,dataset,user_roles,game_submissions FROM anon,authenticated;
+INSERT INTO storage.buckets (id,name,public,file_size_limit,allowed_mime_types) VALUES ('swish-workbooks','swish-workbooks',false,20971520,ARRAY['application/octet-stream','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']) ON CONFLICT(id) DO NOTHING;

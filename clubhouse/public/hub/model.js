@@ -1,0 +1,33 @@
+(function(root){
+'use strict';
+const cols={pts:'I',reb:'J',ast:'K',stl:'L',blk:'M',foul:'N',to:'O',fgm:'V',fga:'W',twoMade:'Z',twoAtt:'AA',threeMade:'AB',threeAtt:'AC',ftm:'AD',fta:'AE',oreb:'AF',dreb:'AG',contest:'AH',deflect:'AI'};
+function num(v){if(v===null||v===undefined||String(v).trim()===''||!Number.isFinite(Number(v)))return null;return Number(v)}
+function text(v){return v===null||v===undefined?'':String(v).trim()}
+function date(v){let n=num(v);if(n!==null&&n>=36526&&n<100000)return new Date((Math.floor(n)-25569)*86400000).toISOString().slice(0,10);if(/^\d{4}-\d{2}-\d{2}/.test(text(v))&&!isNaN(Date.parse(v)))return text(v).slice(0,10);return null}
+function key(d,o){return `${num(d)??text(d)}|${text(o).toLowerCase()}`}
+function build(raw){
+ if(!Array.isArray(raw.Player_Data)||!Array.isArray(raw.Player_Roster)||!Array.isArray(raw.Games))throw Error('Please upload the SWISH workbook with Player_Data, Player_Roster, and Games tabs.');
+ if(!/player/i.test(text(raw.Player_Data[0]?.C))||!/opponent/i.test(text(raw.Games[0]?.E))||!/player/i.test(text(raw.Player_Roster[0]?.A)))throw Error('The sheet columns do not match the SWISH tracker. Keep the original column layout.');
+ const rows=raw.Player_Data.slice(1).filter(r=>text(r.C)&&text(r.C).toUpperCase()!=='SWISH'&&Object.values(cols).some(c=>num(r[c])!==null)).map((r,i)=>({name:text(r.C),position:text(r.A),number:num(r.B),date:date(r.D),rawDate:r.D,opponent:text(r.E),key:key(r.D,r.E),index:i,...Object.fromEntries(Object.entries(cols).map(([m,c])=>[m,num(r[c])]))}));
+ const roster=raw.Player_Roster.slice(1).filter(r=>text(r.A)&&text(r.A).toUpperCase()!=='SWISH').map(r=>({name:text(r.A),position:text(r.B),hand:text(r.C),status:text(r.D)||'Unspecified'}));
+ const names=[...new Set([...roster.map(r=>r.name),...rows.map(r=>r.name)])].sort((a,b)=>a.localeCompare(b));
+ const players=names.map(name=>{const rs=rows.filter(r=>r.name===name),totals={},counts={},avg={};for(const m of Object.keys(cols)){const values=rs.map(r=>r[m]).filter(v=>v!==null);totals[m]=values.reduce((a,b)=>a+b,0);counts[m]=values.length;avg[m]=values.length?totals[m]/values.length:null;}const pct=(a,b)=>counts[a]&&counts[b]&&totals[b]>0?totals[a]/totals[b]:null;return {...(roster.find(r=>r.name===name)??{name,position:rs[0]?.position??'',hand:'',status:'Unlisted'}),rows:rs,gp:rs.length,totals,counts,avg,fg:pct('fgm','fga'),two:pct('twoMade','twoAtt'),three:pct('threeMade','threeAtt'),ft:pct('ftm','fta'),efg:totals.fga>0&&counts.fgm&&counts.threeMade?(totals.fgm+.5*totals.threeMade)/totals.fga:null,ts:totals.fga+.44*totals.fta>0&&counts.pts&&counts.fga&&counts.fta?totals.pts/(2*(totals.fga+.44*totals.fta)):null};});
+ const games=raw.Games.slice(1).filter(r=>text(r.E)&&text(r.C)).map((r,i)=>{const k=key(r.C,r.E),rs=rows.filter(x=>x.key===k),score=num(r.G),against=num(r.H),scored=score!==null&&against!==null,box=rs.reduce((a,b)=>a+(b.pts??0),0);return {id:text(r.A)||k,name:text(r.E),type:text(r.D),date:date(r.C),rawDate:r.C,key:k,index:i,score,against,result:scored?(score>against?'W':score<against?'L':'D'):'—',rows:rs,box,mismatch:score!==null&&rs.length>0&&rs.every(x=>x.pts!==null)&&box!==score};});
+ const duplicates=games.filter((g,i)=>games.findIndex(x=>x.key===g.key)!==i).length;
+ const played=games.filter(g=>g.result!=='—');
+ return {raw,rows,players,games,played,wins:played.filter(g=>g.result==='W').length,losses:played.filter(g=>g.result==='L').length,draws:played.filter(g=>g.result==='D').length,undated:games.filter(g=>!g.date).length,mismatches:games.filter(g=>g.mismatch),duplicates,missing:rows.filter(r=>['pts','reb','ast','stl','blk','to'].some(m=>r[m]===null)).length};
+}
+async function readExcel(file){
+ if(!/\.xlsx$/i.test(file.name))throw Error('Choose an .xlsx file saved from Excel.');
+ if(file.size>20*1024*1024)throw Error('Choose an Excel workbook smaller than 20 MB.');
+ const z=await JSZip.loadAsync(await file.arrayBuffer());
+ const entries=Object.values(z.files);if(entries.some(x=>x._data?.uncompressedSize>30*1024*1024)||entries.reduce((a,x)=>a+(x._data?.uncompressedSize||0),0)>60*1024*1024)throw Error('This workbook is too large to process in the dashboard.');
+ const xml=async(path,required=true)=>{const f=z.file(path);if(!f){if(required)throw Error('This file is not a valid Excel workbook.');return null}const doc=new DOMParser().parseFromString(await f.async('string'),'application/xml');if(doc.getElementsByTagName('parsererror').length)throw Error('The workbook contains unreadable XML. Please save it again in Excel.');return doc;};
+ const wb=await xml('xl/workbook.xml'),rels=await xml('xl/_rels/workbook.xml.rels'),ss=await xml('xl/sharedStrings.xml',false),strings=ss?[...ss.getElementsByTagName('si')].map(s=>[...s.getElementsByTagName('t')].map(t=>t.textContent).join('')):[];
+ const relation=Object.fromEntries([...rels.getElementsByTagName('Relationship')].map(r=>[r.getAttribute('Id'),r.getAttribute('Target')]));const raw={};
+ const offset=wb.getElementsByTagName('workbookPr')[0]?.getAttribute('date1904');
+ for(const sheet of [...wb.getElementsByTagName('sheet')]){const name=sheet.getAttribute('name');if(!['Player_Data','Player_Roster','Games','Shot_Data'].includes(name))continue;const target=relation[sheet.getAttribute('r:id')];if(!target)throw Error('The workbook sheet references are incomplete.');const path=target.startsWith('/')?target.slice(1):'xl/'+target;const doc=await xml(path);raw[name]=[...doc.getElementsByTagName('row')].map(row=>{const out={};for(const c of [...row.getElementsByTagName('c')]){const col=(c.getAttribute('r')||'').replace(/\d/g,'');const value=c.getElementsByTagName('v')[0]?.textContent;let v=c.getAttribute('t')==='s'?strings[Number(value)]:c.getAttribute('t')==='inlineStr'?[...c.getElementsByTagName('t')].map(t=>t.textContent).join(''):value;if(v!==undefined){if((offset==='1'||offset==='true')&&((name==='Player_Data'&&col==='D')||(name==='Games'&&col==='C')||(name==='Shot_Data'&&col==='B'))&&num(v)!==null)v=String(Number(v)+1462);out[col]=v;}}return out;});}
+ return build(raw);
+}
+root.Swish={build,readExcel,num,date,cols};
+})(globalThis);
