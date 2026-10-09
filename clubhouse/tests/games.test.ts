@@ -19,3 +19,31 @@ test('different divisions can log the same date/opponent; the same division stil
  await assert.rejects(writeGame(validateGame(fixture()),'coach',s),(e:any)=>e.status===503);assert.equal(s.stats().writes,1);
  const duplicate=services();duplicate.read=s.read;await assert.rejects(writeGame(validateGame({...fixture(),division:'U21'}),'coach',duplicate),(e:any)=>e.status===409);assert.equal(duplicate.stats().writes,0);
 });
+
+test('every player tracker input maps to its original column; remarks remain literal',()=>{
+ const f:any=fixture();Object.assign(f.players[0],{position:'SF',jersey:23,minutes:18.5,plusMinus:-4,foul:3,closeMade:1,closeAtt:2,oreb:1,dreb:1,contest:5,deflect:4,passingTo:1,remarks:'=IMPORTXML("no")'});f.boxScore='https://example.com/box';f.gameEvents='https://example.com/events';
+ const r:any=gameRequests(validateGame(f),{games:1,players:2},[{A:'Player A',B:'PG'}],'hash'),v=r[3].updateCells.rows[0].values,g=r[2].updateCells.rows[0].values;
+ for(const [i,x] of [[1,23],[6,18.5],[7,-4],[13,3],[23,1],[24,2],[31,1],[32,1],[33,5],[34,4],[37,1],[38,1]])assert.equal(v[i as number].userEnteredValue.numberValue,x);
+ assert.equal(v[0].userEnteredValue.stringValue,'SF');assert.equal(v[39].userEnteredValue.stringValue,'=IMPORTXML("no")');assert.match(v[36].userEnteredValue.formulaValue,/K2\/AL2/);assert.equal(g[9].userEnteredValue.stringValue,f.boxScore);assert.equal(g[10].userEnteredValue.stringValue,f.gameEvents);
+});
+test('optional fields stay unknown, direct field-goal totals work without a split, and consistency is enforced',()=>{
+ const f:any=fixture();let g=validateGame(f);const v:any=gameRequests(g,{games:1,players:2},[],'h')[3];for(const i of [1,6,7,13,23,24,31,32,33,34,36,37,39])assert.deepEqual(v.updateCells.rows[0].values[i],{});
+ for(const update of [{oreb:1,dreb:2},{oreb:3},{passingTo:2},{closeMade:3,closeAtt:3},{fgm:2,fga:6},{minutes:-1},{plusMinus:1.5},{closeMade:0,closeAtt:null}])assert.throws(()=>validateGame({...f,players:[{...f.players[0],...update}]}),ApiError);
+ g=validateGame({...f,players:[{...f.players[0],twoMade:null,twoAtt:null,threeMade:null,threeAtt:null,fgm:3,fga:6}]});assert.equal(g.players[0].fgm,3);assert.equal(g.players[0].twoMade,null);
+});
+test('shot validation supports partial logs, all detail fields and rejects duplicates or totals exceeding the box score',()=>{
+ const f:any=fixture();f.shots=[{name:'Player A',number:23,zone:'3PT - Left Wing',result:'Make',hand:'R',detail:'Rim-In',error:'',type:'Catch & Shoot',situation:'Transition',play:'Kick Out',contest:'Open',assisted:'Yes',assister:'Player B',quality:'Good',remarks:'=literal'}];const g=validateGame(f);assert.equal(g.shots[0].remarks,'=literal');
+ for(const shots of [[...f.shots,...f.shots],[{...f.shots[0],name:'Absent'}],[{...f.shots[0],zone:''}],[{...f.shots[0],result:'Unknown'}],[{...f.shots[0],assisted:'No'}],[{...f.shots[0],hand:'Invalid'}],[...f.shots,{...f.shots[0],number:24}]])assert.throws(()=>validateGame({...f,shots}),ApiError);
+});
+test('game, box scores, shot rows and the retry receipt use one atomic write, including a missing shot tab',async()=>{
+ const f:any=fixture();f.shots=[{name:'Player A',zone:'Paint (Non-restricted)',result:'Make',remarks:'=DoNotExecute'}];const s=services();let batches:any[]=[];const original=s.google;s.google=async(path:string,body:any)=>{if(path===':batchUpdate')batches.push(body.requests);return original(path,body)};
+ await assert.rejects(writeGame(validateGame(f),'coach',s));assert.equal(batches.length,1);const batch=batches[0];assert(batch.some((r:any)=>r.addSheet?.properties.title==='Shot_Data'));const shots=batch.find((r:any)=>r.updateCells?.start.sheetId===3&&r.updateCells.start.rowIndex===1).updateCells.rows;
+ assert.equal(shots.length,1);const v=shots[0].values;assert.equal(v[0].userEnteredValue.stringValue,'46304_1_1');assert.equal(v[4].userEnteredValue.stringValue,'Player A');assert.equal(v[17].userEnteredValue.stringValue,'=DoNotExecute');assert.equal(v.length,21);assert.equal(v[20].userEnteredValue.stringValue,'46304_1');
+ await writeGame(validateGame(f),'coach',s);assert.equal(batches.length,1);
+});
+
+test('existing shot sheet records are retained; all eighteen shot fields and metadata map correctly',async()=>{
+ const {shotHeaders}=await import('../lib/shot-entry');const f:any=fixture();f.shots=[{name:'Player A',number:113,zone:'Mid-Range - Left',result:'Make',hand:'R',detail:'Rim-In',error:'Short',type:'Pull-Up',situation:'Half-court Set',play:'Kick Out',contest:'Open',assisted:'Yes',assister:'Player A',quality:'Good',remarks:'A Note'}];const s=services();const original=s.google;s.google=async(path:string,body:any)=>path.startsWith('?fields=')?{sheets:[{properties:{title:'Games',sheetId:1}},{properties:{title:'Player_Data',sheetId:2}},{properties:{title:'Shot_Data',sheetId:9,gridProperties:{columnCount:26}}}]}:path===':batchUpdate'?((s as any).batch=body.requests,{}):original(path,body);const read=s.read;s.read=async()=>({...await read(),Shot_Data:[Object.fromEntries(shotHeaders.map((h,i)=>[String.fromCharCode(65+i),h.replace(' ','\n')])),{A:'existing-shot',E:'Player B',F:'Paint',G:'Make'}]});
+ await writeGame(validateGame(f),'coach',s);const batch=(s as any).batch;assert(!batch.some((r:any)=>r.addSheet));const insert=batch.find((r:any)=>r.insertDimension?.range.sheetId===9);assert.equal(insert.insertDimension.range.startIndex,1);const v=batch.find((r:any)=>r.updateCells?.start.sheetId===9&&r.updateCells.start.rowIndex===1).updateCells.rows[0].values;
+ assert.deepEqual(v.slice(4,18).map((c:any)=>c.userEnteredValue?.stringValue),['Player A','Mid-Range - Left','Make','R','Rim-In','Short','Pull-Up','Half-court Set','Kick Out','Open','Yes','Player A','Good','A Note']);assert.equal(v[3].userEnteredValue.numberValue,113);
+});
