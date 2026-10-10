@@ -1,6 +1,6 @@
 'use strict';
 let statsScope={mode:'career',years:null,divisions:null};
-try{const saved=JSON.parse(localStorage.getItem('swish-stats-scope'));if(saved&&['career','seasons','last5'].includes(saved.mode)){const list=(v,year=false)=>v===null?null:Array.isArray(v)&&v.length<=100&&v.every(x=>typeof x==='string'&&x.length<=80&&(!year||/^20\d{2}$/.test(x)))?[...new Set(v)]:null;statsScope={mode:saved.mode,years:saved.mode==='career'?null:list(saved.years,true),divisions:list(saved.divisions)};}}catch{}
+// Every fresh visit starts at Career / All Divisions; in-page choices survive refreshes.
 let playerLogSort={key:'date',direction:'desc'},developmentSort={player:{key:'year',direction:'asc'},team:{key:'year',direction:'asc'}};
 const developmentLabels={pts:'Points',reb:'Rebounds',ast:'Assists',stl:'Steals',blk:'Blocks',to:'Turnovers',fg:'FG Percentage',minutes:'Minutes',plusMinus:'Player +/−'};
 function sourceModel(){return data?.career||sourceData;}
@@ -8,7 +8,7 @@ function scopeYearOptions(full){const o=SwishScope.options(full);const extra=[..
 function scopeSave(){try{localStorage.setItem('swish-stats-scope',JSON.stringify(statsScope));}catch{}}
 function scopeUpdate(){scopeSave();if(sourceModel())install(sourceModel(),sourceName,{preserveDrafts:true,scopeOnly:true});else syncScopeControls();}
 function syncScopeControls(){const full=sourceModel();if(!full)return;$('stats-scope').hidden=false;const focused=document.activeElement,focusYear=focused?.dataset.scopeYear,focusDivision=focused?.dataset.scopeDivision;const years=scopeYearOptions(full),divisions=[...new Set([...SwishScope.options(full).divisions,...(statsScope.divisions||[])])].sort();
- $('scope-label').textContent=SwishScope.label(statsScope);const selectedPlayer=player();$('scope-summary').innerHTML=selectedPlayer?`<div class="summary-records"><strong>${selectedPlayer.gp}</strong><span>Games</span></div>${['pts','reb','ast','stl','blk','to'].map(k=>`<div><strong>${fmt(selectedPlayer.avg[k])}</strong><span>${k.toUpperCase()} / G</span></div>`).join('')}`:'<p>No Player Selected</p>';
+ $('scope-label').textContent=SwishScope.label(statsScope);const selectedPlayer=player()||teamOverview();$('scope-summary').innerHTML=selectedPlayer?`<div class="summary-records"><strong>${selectedPlayer.gp}</strong><span>Games</span></div>${['pts','reb','ast','stl','blk','to'].map(k=>`<div><strong>${fmt(selectedPlayer.avg[k])}</strong><span>${k.toUpperCase()} / G</span></div>`).join('')}`:'<p>No Player Selected</p>';
  for(const b of document.querySelectorAll('[data-period]'))b.setAttribute('aria-pressed',String(b.dataset.period===statsScope.mode));
  const boxes=(values,selected,kind)=>`<legend class="sr-only">Select ${kind==='year'?'Years To Combine':'Game Divisions'}</legend><div class="scope-checkboxes">${values.map(v=>`<label><input type="checkbox" data-scope-${kind}="${esc(v)}" ${selected===null||selected.includes(v)?'checked':''}>${esc(v==='__unassigned__'?'Division Not Recorded':v)}</label>`).join('')}</div><button type="button" class="text-button" data-scope-all="${kind}">Select All</button><button type="button" class="text-button" data-scope-none="${kind}">Clear Selection</button>`;
  $('scope-years').innerHTML=boxes(years,statsScope.years,'year');$('scope-divisions').innerHTML=boxes(divisions,statsScope.divisions,'division');

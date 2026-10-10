@@ -1,3 +1,4 @@
+import {rosterAgeBracket} from './roster-age';
 import {ApiError,identity,requireStaff,sameOrigin,reply,unlockPin,cookie,device} from './auth';
 import {database} from './database';
 import {getLiveSheet} from './google-sheet';
@@ -6,7 +7,7 @@ import {communityApi} from './community-api';
 import {googleRequest} from './sheets-client';
 import {validatePlayer,writePlayer} from './roster-entry';
 import {fields} from './sheet-fields';
-export function playerStats(raw:Record<string,any[]>){const allowed={Player_Roster:['A','B','C','D'],Player_Data:['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF','AG','AH','AI','AL','AM'],Games:['A','C','D','E','F','G','H'],Shot_Data:['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q']};return Object.fromEntries(Object.entries(allowed).map(([tab,cols])=>{const metadata=Object.keys(raw[tab]?.[0]||{}).filter(c=>Object.values(fields).includes(raw[tab][0][c]));return [tab,(raw[tab]||[]).map(r=>Object.fromEntries([...cols,...metadata].filter(c=>r[c]!==undefined).map(c=>[c,r[c]])))];}));}
+export function playerStats(raw:Record<string,any[]>):Record<string,Record<string,any>[]>{const allowed={Player_Roster:['A','B','C','D'],Player_Data:['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF','AG','AH','AI','AL','AM'],Games:['A','C','D','E','F','G','H'],Shot_Data:['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q']};return Object.fromEntries(Object.entries(allowed).map(([tab,cols])=>{const metadata=Object.keys(raw[tab]?.[0]||{}).filter(c=>Object.values(fields).includes(raw[tab][0][c]));return [tab,(raw[tab]||[]).map((r,i)=>({...Object.fromEntries([...cols,...metadata].filter(c=>r[c]!==undefined).map(c=>[c,r[c]])),...(tab==='Player_Roster'&&i>0?{ageBracket:rosterAgeBracket(raw[tab][0],r)}:{})}))];}));}
 const communityPaths=['community','predictions','award-votes','suggestions','check-ins','films','films/delete','awards','awards/delete','lineup-stints','lineup-stints/delete','notes'];
 export async function portableApi(request:Request,services:{DB?:any;identity?:typeof identity;live?:typeof getLiveSheet;write?:typeof writeGame;writeRoster?:typeof writePlayer}={}){try{
 sameOrigin(request);const path=new URL(request.url).pathname.replace(/^\/api\//,''),method=request.method;

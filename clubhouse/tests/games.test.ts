@@ -47,3 +47,11 @@ test('existing shot sheet records are retained; all eighteen shot fields and met
  await writeGame(validateGame(f),'coach',s);const batch=(s as any).batch;assert(!batch.some((r:any)=>r.addSheet));const insert=batch.find((r:any)=>r.insertDimension?.range.sheetId===9);assert.equal(insert.insertDimension.range.startIndex,1);const v=batch.find((r:any)=>r.updateCells?.start.sheetId===9&&r.updateCells.start.rowIndex===1).updateCells.rows[0].values;
  assert.deepEqual(v.slice(4,18).map((c:any)=>c.userEnteredValue?.stringValue),['Player A','Mid-Range - Left','Make','R','Rim-In','Short','Pull-Up','Half-court Set','Kick Out','Open','Yes','Player A','Good','A Note']);assert.equal(v[3].userEnteredValue.numberValue,113);
 });
+
+test('total field goals minus threes derive twos and the spreadsheet split without duplicate input',()=>{
+ const f:any=fixture();delete f.players[0].twoMade;delete f.players[0].twoAtt;Object.assign(f.players[0],{fgm:3,fga:6});const g=validateGame(f);assert.equal(g.players[0].twoMade,2);assert.equal(g.players[0].twoAtt,4);
+ const requests:any=gameRequests(g,{games:1,players:2},[],'h');const row:any=requests[3].updateCells.rows[0].values;assert.equal(row[25].userEnteredValue.numberValue,2);assert.equal(row[26].userEnteredValue.numberValue,4);
+ for(const change of [{fgm:0},{fga:1},{fgm:3,fga:3,threeMade:0,threeAtt:2},{twoMade:1,twoAtt:4}])assert.throws(()=>validateGame({...f,players:[{...f.players[0],...change}]}),ApiError);
+ const zero=validateGame({...f,score:2,players:[{...f.players[0],pts:2,fgm:0,fga:0,threeMade:0,threeAtt:0}]});assert.equal(zero.players[0].twoMade,0);assert.equal(zero.players[0].twoAtt,0);
+ const unknown=validateGame({...f,players:[{...f.players[0],threeMade:null,threeAtt:null}]});assert.equal(unknown.players[0].twoMade,null);
+});
